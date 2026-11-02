@@ -1,0 +1,66 @@
+name: Build and publish Mac app
+# Runs in this public repo so GitHub's Mac build machines are free.
+# Reads the private source with a read-only deploy key; publishes a release when the
+# version in desktop/app/package.json has no release yet. Installed apps then get notified.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "23 * * * *"
+permissions:
+  contents: write
+concurrency:
+  group: build
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      build: ${{ steps.v.outputs.build }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: cryder820/companion-button-organizer
+          ssh-key: ${{ secrets.SOURCE_DEPLOY_KEY }}
+          path: src
+      - id: v
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=$(node -p "require('./src/desktop/app/package.json').version")
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          if gh release view "v$V" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "build=false" >> "$GITHUB_OUTPUT"; echo "v$V is already published."
+          else
+            echo "build=true" >> "$GITHUB_OUTPUT"; echo "v$V is new; building."
+          fi
+  mac:
+    needs: check
+    if: needs.check.outputs.build == 'true'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          repository: cryder820/companion-button-organizer
+          ssh-key: ${{ secrets.SOURCE_DEPLOY_KEY }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build:desktop
+      - name: Package
+        working-directory: desktop
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          npm ci --no-audit --no-fund
+          npx electron-builder --mac --arm64 --x64 --publish never
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          V: ${{ needs.check.outputs.version }}
+        run: |
+          if [ -s desktop/RELEASE_NOTES.md ]; then cp desktop/RELEASE_NOTES.md notes.md; else git log -1 --pretty=%B > notes.md; fi
+          printf '\n\nDownload the .dmg for your Mac: arm64 = Apple Silicon, x64 = Intel. Installed copies update from inside the app.\n' >> notes.md
+          gh release create "v$V" desktop/release/*-mac-*.dmg desktop/release/*-mac-*.zip \
+            --repo "$GITHUB_REPOSITORY" --title "v$V" --notes-file notes.md

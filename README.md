@@ -10,4 +10,9 @@ Mac installers for Companion Button Organizer. Source code is private; this repo
 
 ## Updates
 
-The app checks this page on launch and every 6 hours. When a new version is posted, an Update button appears in the top bar (or use the app menu > Check for Updates). The app must be running from /Applications to update itself.
+The app checks this page on launch and every 2 hours. When a new version is posted, a Mac notification appears along with an Update button in the top bar (or use the app menu > Check for Updates). The app must be running from /Applications to update itself.
+
+
+## Publishing (maintainer)
+
+Bump `version` in `desktop/app/package.json` in the source repo and push. Within the hour, the Build and publish Mac app workflow here builds and posts the release. To publish right away, open Actions > Build and publish Mac app > Run workflow.
